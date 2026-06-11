@@ -1,316 +1,96 @@
 #define LEFT_IR 3
 #define RIGHT_IR 2
 
-#define LEFT_TRIG 8
-#define LEFT_ECHO 9
-#define RIGHT_TRIG 4
-#define RIGHT_ECHO 7
+#define LEFT_EN 11
+#define LEFT_IN1 6
+#define LEFT_IN2 5
 
-#define LEFT_EN 5
-#define LEFT_IN1 10
-#define LEFT_IN2 11
-
-#define RIGHT_EN 6
+#define RIGHT_EN 10
 #define RIGHT_IN3 12
 #define RIGHT_IN4 13
 
-#define BLACK HIGH
-#define WHITE LOW
 
-// Class: LeftIRSensor
-class LeftIRSensor {
+class Robot {
+
   private:
-    int pin;
+    int leftSpeed = 75;
+    int rightSpeed = 65;
+    int leftTurn = 15;
+    int rightTurn = 15;
 
   public:
-    LeftIRSensor(int sensorPin) {
-      pin = sensorPin;
+
+    Robot() {
+      // Constructor sets nothing because pins are #defined
     }
 
-    void begin() {
-      pinMode(pin, INPUT);
-    }
+    void initPins() {
+      pinMode(LEFT_IR, INPUT);
+      pinMode(RIGHT_IR, INPUT);
 
-    bool detectsBlackLine() {
-      return digitalRead(pin) == BLACK;
-    }
-};
-// Class: RightIRSensor
-class RightIRSensor {
-  private:
-    int pin;
+      pinMode(LEFT_EN, OUTPUT);
+      pinMode(RIGHT_EN, OUTPUT);
 
-  public:
-    RightIRSensor(int sensorPin) {
-      pin = sensorPin;
-    }
-
-    void begin() {
-      pinMode(pin, INPUT);
-    }
-
-    bool detectsBlackLine() {
-      return digitalRead(pin) == BLACK;
-    }
-};
-
-// Class: LeftUltrasonicSensor
-class LeftUltrasonicSensor {
-  private:
-    int trigPin;
-    int echoPin;
-
-  public:
-    LeftUltrasonicSensor(int trig, int echo) {
-      trigPin = trig;
-      echoPin = echo;
-    }
-
-    void begin() {
-      pinMode(trigPin, OUTPUT);
-      pinMode(echoPin, INPUT);
-    }
-
-    long getDistanceCM() {
-      digitalWrite(trigPin, LOW);
-      delayMicroseconds(2);
-      digitalWrite(trigPin, HIGH);
-      delayMicroseconds(10);
-      digitalWrite(trigPin, LOW);
-
-      long duration = pulseIn(echoPin, HIGH, 25000);
-
-      if (duration == 0) {
-        return -1;
-      }
-
-      return duration * 0.034 / 2;
-    }
-};
-// Class: RightUltrasonicSensor
-class RightUltrasonicSensor {
-  private:
-    int trigPin;
-    int echoPin;
-
-  public:
-    RightUltrasonicSensor(int trig, int echo) {
-      trigPin = trig;
-      echoPin = echo;
-    }
-
-    void begin() {
-      pinMode(trigPin, OUTPUT);
-      pinMode(echoPin, INPUT);
-    }
-
-    long getDistanceCM() {
-      digitalWrite(trigPin, LOW);
-      delayMicroseconds(2);
-      digitalWrite(trigPin, HIGH);
-      delayMicroseconds(10);
-      digitalWrite(trigPin, LOW);
-
-      long duration = pulseIn(echoPin, HIGH, 25000);
-
-      if (duration == 0) {
-        return -1;
-      }
-
-      return duration * 0.034 / 2;
-    }
-};
-// Class: MotorController
-class MotorController {
-  private:
-    int enLeft, in1, in2;
-    int enRight, in3, in4;
-
-  public:
-    MotorController(int leftEnable, int leftIn1, int leftIn2,
-                    int rightEnable, int rightIn3, int rightIn4) {
-      enLeft = leftEnable;
-      in1 = leftIn1;
-      in2 = leftIn2;
-      enRight = rightEnable;
-      in3 = rightIn3;
-      in4 = rightIn4;
-    }
-
-    void begin() {
-      pinMode(enRight, OUTPUT);
-      pinMode(in1, OUTPUT);
-      pinMode(in2, OUTPUT);
-      pinMode(enLeft, OUTPUT);
-      pinMode(in3, OUTPUT);
-      pinMode(in4, OUTPUT);
-    }
-
-    void moveForward(int speedValue) {
-      analogWrite(enRight, speedValue);
-      analogWrite(enLeft, speedValue);
-
-      digitalWrite(in1, LOW);
-      digitalWrite(in2, HIGH);
-      digitalWrite(in3, HIGH);
-      digitalWrite(in4, LOW);
-    }
-
-    void moveBackward(int speedValue) {
-      analogWrite(enRight, speedValue);
-      analogWrite(enLeft, speedValue);
-
-      digitalWrite(in1, HIGH);
-      digitalWrite(in2, LOW);
-      digitalWrite(in3, LOW);
-      digitalWrite(in4, HIGH);
-    }
-
-    void turnLeft(int speedValue, int turnValue) {
-      analogWrite(enRight, speedValue);
-      analogWrite(enLeft, turnValue);
-
-      digitalWrite(in1, LOW);
-      digitalWrite(in2, HIGH);
-      digitalWrite(in3, LOW);
-      digitalWrite(in4, HIGH);
-    }
-
-    void turnRight(int speedValue, int turnValue) {
-      analogWrite(enRight, turnValue);
-      analogWrite(enLeft, speedValue);
-
-      digitalWrite(in1, HIGH);
-      digitalWrite(in2, LOW);
-      digitalWrite(in3, HIGH);
-      digitalWrite(in4, LOW);
-    }
-
-    void stop() {
-      analogWrite(enRight, 0);
-      analogWrite(enLeft, 0);
-
-      digitalWrite(in1, LOW);
-      digitalWrite(in2, LOW);
-      digitalWrite(in3, LOW);
-      digitalWrite(in4, LOW);
-    }
-};
-// Class: LineFollowingRobot
-class LineFollowingRobot {
-  private:
-    LeftIRSensor leftIR;
-    RightIRSensor rightIR;
-    LeftUltrasonicSensor leftUltrasonic;
-    RightUltrasonicSensor rightUltrasonic;
-    MotorController motorController;
-
-    int baseSpeed;
-    int turnSpeed;
-    int obstacleDistance;
-
-  public:
-    LineFollowingRobot() :
-      leftIR(LEFT_IR),
-      rightIR(RIGHT_IR),
-      leftUltrasonic(LEFT_TRIG, LEFT_ECHO),
-      rightUltrasonic(RIGHT_TRIG, RIGHT_ECHO),
-      motorController(
-    LEFT_EN, LEFT_IN1, LEFT_IN2,
-    RIGHT_EN, RIGHT_IN3, RIGHT_IN4
-    
-)
-    {
-      baseSpeed = 120;
-      turnSpeed = 110;
-      obstacleDistance = 15;
-    }
-
-    void begin() {
-      leftIR.begin();
-      rightIR.begin();
-      leftUltrasonic.begin();
-      rightUltrasonic.begin();
-      motorController.begin();
-
-      Serial.begin(9600);
+      pinMode(LEFT_IN1, OUTPUT);
+      pinMode(LEFT_IN2, OUTPUT);
+      pinMode(RIGHT_IN3, OUTPUT);
+      pinMode(RIGHT_IN4, OUTPUT);
     }
 
     void update() {
-      bool leftBlack = leftIR.detectsBlackLine();
-      bool rightBlack = rightIR.detectsBlackLine();
 
-      long leftDistance = leftUltrasonic.getDistanceCM();
-      long rightDistance = rightUltrasonic.getDistanceCM();
+      bool leftBlack = digitalRead(LEFT_IR);
+      bool rightBlack = digitalRead(RIGHT_IR);
 
-      Serial.print("Left IR: ");
-      Serial.print(leftBlack ? "BLACK" : "WHITE");
+      Serial.print("L:");
+      Serial.print(!leftBlack);
+      
+      Serial.print(" R:");
+      Serial.println(!rightBlack);
+      
 
-      Serial.print(" | Right IR: ");
-      Serial.print(rightBlack ? "BLACK" : "WHITE");
-
-      Serial.print(" | Left US: ");
-      Serial.print(leftDistance);
-      Serial.print(" cm");
-
-      Serial.print(" | Right US: ");
-      Serial.print(rightDistance);
-      Serial.println(" cm");
-
-      if (leftDistance > 0 && leftDistance < obstacleDistance) {
-        avoidObstacleLeft();
+      // CASE 1: Both white → forward
+      if (!leftBlack && !rightBlack) {
+        move(leftSpeed, rightSpeed);
       }
-      else if (rightDistance > 0 && rightDistance < obstacleDistance) {
-        avoidObstacleRight();
-      }
-      else {
-        followLine(leftBlack, rightBlack);
-      }
-    }
 
-    void followLine(bool leftBlack, bool rightBlack) {
-      if (leftBlack && rightBlack) {
-        motorController.moveForward(baseSpeed);
+      // CASE 2: Both black → forward
+      else if (leftBlack && rightBlack) {
+        move(leftSpeed, rightSpeed);
       }
+
+      // CASE 3: Left black → turn left
       else if (leftBlack && !rightBlack) {
-        motorController.turnLeft(baseSpeed,turnSpeed);
+        move(leftTurn, rightSpeed);
       }
+
+      // CASE 4: Right black → turn right
       else if (!leftBlack && rightBlack) {
-        motorController.turnRight(baseSpeed,turnSpeed);
-      }
-      else {
-        motorController.stop();
+        move(leftSpeed, rightTurn);
       }
     }
 
-    void avoidObstacleLeft() {
-      motorController.stop();
-      delay(200);
-      motorController.moveBackward(baseSpeed);
-      delay(300);
-      motorController.turnRight(baseSpeed,turnSpeed);
-      delay(500);
-      motorController.stop();
-    }
+    void move(int L, int R) {
+      analogWrite(LEFT_EN, L);
+      analogWrite(RIGHT_EN, R);
 
-    void avoidObstacleRight() {
-      motorController.stop();
-      delay(200);
-      motorController.moveBackward(baseSpeed);
-      delay(300);
-      motorController.turnLeft(baseSpeed,turnSpeed);
-      delay(500);
-      motorController.stop();
+      digitalWrite(LEFT_IN1, LOW);
+      digitalWrite(LEFT_IN2, HIGH);
+
+      digitalWrite(RIGHT_IN3, HIGH);
+      digitalWrite(RIGHT_IN4, LOW);
     }
 };
 
-LineFollowingRobot robot;
+
+Robot bot;
 
 void setup() {
-  robot.begin();
+  Serial.begin(9600);
+  bot.initPins();
 }
 
 void loop() {
-  robot.update();
-  delay(100);
+  bot.update();
+  delay(32);
 }
