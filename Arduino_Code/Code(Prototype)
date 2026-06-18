@@ -9,88 +9,149 @@
 #define RIGHT_IN3 12
 #define RIGHT_IN4 13
 
+// Speed tuning
+int baseLeftSpeed  = 115;
+int baseRightSpeed = 105;
 
-class Robot {
+int softTurnSpeed = 100;
+int hardTurnSpeed = 50;
 
-  private:
-    int leftSpeed = 75;
-    int rightSpeed = 65;
-    int leftTurn = 15;
-    int rightTurn = 15;
-
-  public:
-
-    Robot() {
-      // Constructor sets nothing because pins are #defined
-    }
-
-    void initPins() {
-      pinMode(LEFT_IR, INPUT);
-      pinMode(RIGHT_IR, INPUT);
-
-      pinMode(LEFT_EN, OUTPUT);
-      pinMode(RIGHT_EN, OUTPUT);
-
-      pinMode(LEFT_IN1, OUTPUT);
-      pinMode(LEFT_IN2, OUTPUT);
-      pinMode(RIGHT_IN3, OUTPUT);
-      pinMode(RIGHT_IN4, OUTPUT);
-    }
-
-    void update() {
-
-      bool leftBlack = digitalRead(LEFT_IR);
-      bool rightBlack = digitalRead(RIGHT_IR);
-
-      Serial.print("L:");
-      Serial.print(!leftBlack);
-      
-      Serial.print(" R:");
-      Serial.println(!rightBlack);
-      
-
-      // CASE 1: Both white → forward
-      if (!leftBlack && !rightBlack) {
-        move(leftSpeed, rightSpeed);
-      }
-
-      // CASE 2: Both black → forward
-      else if (leftBlack && rightBlack) {
-        move(leftSpeed, rightSpeed);
-      }
-
-      // CASE 3: Left black → turn left
-      else if (leftBlack && !rightBlack) {
-        move(leftTurn, rightSpeed);
-      }
-
-      // CASE 4: Right black → turn right
-      else if (!leftBlack && rightBlack) {
-        move(leftSpeed, rightTurn);
-      }
-    }
-
-    void move(int L, int R) {
-      analogWrite(LEFT_EN, L);
-      analogWrite(RIGHT_EN, R);
-
-      digitalWrite(LEFT_IN1, LOW);
-      digitalWrite(LEFT_IN2, HIGH);
-
-      digitalWrite(RIGHT_IN3, HIGH);
-      digitalWrite(RIGHT_IN4, LOW);
-    }
-};
-
-
-Robot bot;
+int lastDirection = 0;
+// -1 = last saw line on left
+//  1 = last saw line on right
+//  0 = center/unknown
 
 void setup() {
   Serial.begin(9600);
-  bot.initPins();
+
+  pinMode(LEFT_IR, INPUT);
+  pinMode(RIGHT_IR, INPUT);
+
+  pinMode(LEFT_EN, OUTPUT);
+  pinMode(RIGHT_EN, OUTPUT);
+
+  pinMode(LEFT_IN1, OUTPUT);
+  pinMode(LEFT_IN2, OUTPUT);
+
+  pinMode(RIGHT_IN3, OUTPUT);
+  pinMode(RIGHT_IN4, OUTPUT);
 }
 
 void loop() {
-  bot.update();
-  delay(32);
+  bool leftBlack  = digitalRead(LEFT_IR);
+  bool rightBlack = digitalRead(RIGHT_IR);
+
+  Serial.print("Left: ");
+  Serial.print(leftBlack);
+  Serial.print(" Right: ");
+  Serial.println(rightBlack);
+
+  // For most IR sensors:
+  // BLACK = HIGH
+  // WHITE = LOW
+
+  if (leftBlack && rightBlack) {
+    // Both sensors on black line = go forward
+    forward(baseLeftSpeed, baseRightSpeed);
+    lastDirection = 0;
+  }
+
+  else if (leftBlack && !rightBlack) {
+    // Left sensor sees black, robot drifting right
+    // Turn left softly
+    turnLeftSoft();
+    lastDirection = -1;
+  }
+
+  else if (!leftBlack && rightBlack) {
+    // Right sensor sees black, robot drifting left
+    // Turn right softly
+    turnRightSoft();
+    lastDirection = 1;
+  }
+
+  else {
+    // Both sensors see white = robot lost the black line
+    // Rotate toward last known line side
+    if (lastDirection == -1) {
+      rotateLeft();
+    }
+    else if (lastDirection == 1) {
+      rotateRight();
+    }
+    else {
+      // If no memory, search slowly
+      rotateLeft();
+    }
+  }
+
+  delay(16);
+}
+
+// ---------- Movement functions ----------
+
+void forward(int L, int R) {
+  analogWrite(LEFT_EN, L);
+  analogWrite(RIGHT_EN, R);
+
+  digitalWrite(LEFT_IN1, LOW);
+  digitalWrite(LEFT_IN2, HIGH);
+
+  digitalWrite(RIGHT_IN3, HIGH);
+  digitalWrite(RIGHT_IN4, LOW);
+}
+
+void turnLeftSoft() {
+  analogWrite(LEFT_EN, softTurnSpeed);
+  analogWrite(RIGHT_EN, baseRightSpeed);
+
+  digitalWrite(LEFT_IN1, LOW);
+  digitalWrite(LEFT_IN2, HIGH);
+
+  digitalWrite(RIGHT_IN3, HIGH);
+  digitalWrite(RIGHT_IN4, LOW);
+}
+
+void turnRightSoft() {
+  analogWrite(LEFT_EN, baseLeftSpeed);
+  analogWrite(RIGHT_EN, softTurnSpeed);
+
+  digitalWrite(LEFT_IN1, LOW);
+  digitalWrite(LEFT_IN2, HIGH);
+
+  digitalWrite(RIGHT_IN3, HIGH);
+  digitalWrite(RIGHT_IN4, LOW);
+}
+
+void rotateLeft() {
+  analogWrite(LEFT_EN, hardTurnSpeed);
+  analogWrite(RIGHT_EN, hardTurnSpeed);
+
+  digitalWrite(LEFT_IN1, HIGH);
+  digitalWrite(LEFT_IN2, LOW);
+
+  digitalWrite(RIGHT_IN3, HIGH);
+  digitalWrite(RIGHT_IN4, LOW);
+}
+
+void rotateRight() {
+  analogWrite(LEFT_EN, hardTurnSpeed);
+  analogWrite(RIGHT_EN, hardTurnSpeed);
+
+  digitalWrite(LEFT_IN1, LOW);
+  digitalWrite(LEFT_IN2, HIGH);
+
+  digitalWrite(RIGHT_IN3, LOW);
+  digitalWrite(RIGHT_IN4, HIGH);
+}
+
+void stopRobot() {
+  analogWrite(LEFT_EN, 0);
+  analogWrite(RIGHT_EN, 0);
+
+  digitalWrite(LEFT_IN1, LOW);
+  digitalWrite(LEFT_IN2, LOW);
+
+  digitalWrite(RIGHT_IN3, LOW);
+  digitalWrite(RIGHT_IN4, LOW);
 }
