@@ -9,149 +9,171 @@
 #define RIGHT_IN3 12
 #define RIGHT_IN4 13
 
-// Speed tuning
-int baseLeftSpeed  = 115;
-int baseRightSpeed = 105;
+enum State {
+  FOLLOW_LINE,
+  SEARCH_LINE
+};
 
-int softTurnSpeed = 100;
-int hardTurnSpeed = 50;
+State state = FOLLOW_LINE;
 
-int lastDirection = 0;
-// -1 = last saw line on left
-//  1 = last saw line on right
-//  0 = center/unknown
+// ======================
+// Motor calibration
+// ======================
+int leftBaseSpeed  = 80;
+int rightBaseSpeed = 82;
 
-void setup() {
-  Serial.begin(9600);
+// ======================
+// PID
+// ======================
+float Kp = 20;
+float Ki = 0;
+float Kd = 15;
 
+float error         = 0;
+float previousError = 0;
+float integral      = 0;
+
+// ======================
+// Direction memory
+// ======================
+int lastDirection = 1;
+
+// ======================
+// Timing
+// ======================
+unsigned long searchStart = 0;
+#define SEARCH_TIMEOUT 3000
+
+void setMotor(int leftSpeed, int rightSpeed)
+{
+  leftSpeed  = constrain(leftSpeed,  0, 255);
+  rightSpeed = constrain(rightSpeed, 0, 255);
+
+  analogWrite(LEFT_EN, leftSpeed);
+  digitalWrite(LEFT_IN1, LOW);
+  digitalWrite(LEFT_IN2, HIGH);
+
+  analogWrite(RIGHT_EN, rightSpeed);
+  digitalWrite(RIGHT_IN3, HIGH);
+  digitalWrite(RIGHT_IN4, LOW);
+}
+
+void setup()
+{
   pinMode(LEFT_IR, INPUT);
   pinMode(RIGHT_IR, INPUT);
 
   pinMode(LEFT_EN, OUTPUT);
-  pinMode(RIGHT_EN, OUTPUT);
-
   pinMode(LEFT_IN1, OUTPUT);
   pinMode(LEFT_IN2, OUTPUT);
 
+  pinMode(RIGHT_EN, OUTPUT);
   pinMode(RIGHT_IN3, OUTPUT);
   pinMode(RIGHT_IN4, OUTPUT);
+
+  Serial.begin(9600);
+  delay(2000);
 }
 
-void loop() {
+void loop()
+{
   bool leftBlack  = digitalRead(LEFT_IR);
   bool rightBlack = digitalRead(RIGHT_IR);
 
-  Serial.print("Left: ");
-  Serial.print(leftBlack);
-  Serial.print(" Right: ");
-  Serial.println(rightBlack);
+  // ======================
+  // FOLLOW LINE MODE
+  // ======================
+  if (state == FOLLOW_LINE)
+  {
+    // Remember last direction
+    if (leftBlack && !rightBlack)
+      lastDirection = -1;
+    else if (!leftBlack && rightBlack)
+      lastDirection = 1;
 
-  // For most IR sensors:
-  // BLACK = HIGH
-  // WHITE = LOW
-
-  if (leftBlack && rightBlack) {
-    // Both sensors on black line = go forward
-    forward(baseLeftSpeed, baseRightSpeed);
-    lastDirection = 0;
-  }
-
-  else if (leftBlack && !rightBlack) {
-    // Left sensor sees black, robot drifting right
-    // Turn left softly
-    turnLeftSoft();
-    lastDirection = -1;
-  }
-
-  else if (!leftBlack && rightBlack) {
-    // Right sensor sees black, robot drifting left
-    // Turn right softly
-    turnRightSoft();
-    lastDirection = 1;
-  }
-
-  else {
-    // Both sensors see white = robot lost the black line
-    // Rotate toward last known line side
-    if (lastDirection == -1) {
-      rotateLeft();
+    // ----------------------
+    // Unified PID with dynamic speed
+    // ----------------------
+    if (leftBlack && !rightBlack)
+    {
+      error          = 2.0;
+      leftBaseSpeed  = 80;   // slower on curves
+      rightBaseSpeed = 82;
     }
-    else if (lastDirection == 1) {
-      rotateRight();
+    else if (!leftBlack && rightBlack)
+    {
+      error          = -2.0;
+      leftBaseSpeed  = 80;   // slower on curves
+      rightBaseSpeed = 82;
     }
-    else {
-      // If no memory, search slowly
-      rotateLeft();
+    else if (leftBlack && rightBlack)
+    {
+      error          = 0;
+      leftBaseSpeed  = 120;  // full speed on straight
+      rightBaseSpeed = 122;
     }
+    else
+    {
+      // Both white — lost the line
+      error          = (lastDirection == 1) ? 2.0 : -2.0;
+      leftBaseSpeed  = 80;
+      rightBaseSpeed = 82;
+
+      searchStart = millis();
+      state       = SEARCH_LINE;
+      return;
+    }
+
+    // ----------------------
+    // PID calculation
+    // ----------------------
+    integral += error;
+    integral = constrain(integral, -30, 30);
+
+    float derivative = error - previousError;
+
+    float correction =
+      (Kp * error) +
+      (Ki * integral) +
+      (Kd * derivative);
+
+    correction = constrain(correction, -50, 50);  // tighter limit
+
+    previousError = error;
+
+    int leftSpeed  = leftBaseSpeed - correction;
+    int rightSpeed = rightBaseSpeed + correction;
+
+    setMotor(leftSpeed, rightSpeed);
   }
 
-  delay(16);
-}
+  // ======================
+  // SEARCH LINE MODE
+  // ======================
+  else if (state == SEARCH_LINE)
+  {
+    leftBlack  = digitalRead(LEFT_IR);
+    rightBlack = digitalRead(RIGHT_IR);
 
-// ---------- Movement functions ----------
+    if (millis() - searchStart > SEARCH_TIMEOUT)
+    {
+      setMotor(0, 0);
+      return;
+    }
 
-void forward(int L, int R) {
-  analogWrite(LEFT_EN, L);
-  analogWrite(RIGHT_EN, R);
+    if (leftBlack || rightBlack)
+    {
+      state         = FOLLOW_LINE;
+      error         = 0;
+      previousError = 0;
+      integral      = 0;
+      return;
+    }
 
-  digitalWrite(LEFT_IN1, LOW);
-  digitalWrite(LEFT_IN2, HIGH);
-
-  digitalWrite(RIGHT_IN3, HIGH);
-  digitalWrite(RIGHT_IN4, LOW);
-}
-
-void turnLeftSoft() {
-  analogWrite(LEFT_EN, softTurnSpeed);
-  analogWrite(RIGHT_EN, baseRightSpeed);
-
-  digitalWrite(LEFT_IN1, LOW);
-  digitalWrite(LEFT_IN2, HIGH);
-
-  digitalWrite(RIGHT_IN3, HIGH);
-  digitalWrite(RIGHT_IN4, LOW);
-}
-
-void turnRightSoft() {
-  analogWrite(LEFT_EN, baseLeftSpeed);
-  analogWrite(RIGHT_EN, softTurnSpeed);
-
-  digitalWrite(LEFT_IN1, LOW);
-  digitalWrite(LEFT_IN2, HIGH);
-
-  digitalWrite(RIGHT_IN3, HIGH);
-  digitalWrite(RIGHT_IN4, LOW);
-}
-
-void rotateLeft() {
-  analogWrite(LEFT_EN, hardTurnSpeed);
-  analogWrite(RIGHT_EN, hardTurnSpeed);
-
-  digitalWrite(LEFT_IN1, HIGH);
-  digitalWrite(LEFT_IN2, LOW);
-
-  digitalWrite(RIGHT_IN3, HIGH);
-  digitalWrite(RIGHT_IN4, LOW);
-}
-
-void rotateRight() {
-  analogWrite(LEFT_EN, hardTurnSpeed);
-  analogWrite(RIGHT_EN, hardTurnSpeed);
-
-  digitalWrite(LEFT_IN1, LOW);
-  digitalWrite(LEFT_IN2, HIGH);
-
-  digitalWrite(RIGHT_IN3, LOW);
-  digitalWrite(RIGHT_IN4, HIGH);
-}
-
-void stopRobot() {
-  analogWrite(LEFT_EN, 0);
-  analogWrite(RIGHT_EN, 0);
-
-  digitalWrite(LEFT_IN1, LOW);
-  digitalWrite(LEFT_IN2, LOW);
-
-  digitalWrite(RIGHT_IN3, LOW);
-  digitalWrite(RIGHT_IN4, LOW);
+    // Gentle search spin
+    if (lastDirection == 1)
+      setMotor(55, 15);   // was 70/20 — gentler
+    else
+      setMotor(15, 55);
+  }
 }
