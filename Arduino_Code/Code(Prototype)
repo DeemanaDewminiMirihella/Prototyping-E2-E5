@@ -17,7 +17,7 @@
 #define OBSTACLE_DISTANCE_CM 36
 #define SEARCH_TIMEOUT       5000
 
-// ================= MANEUVER TIMINGS =================
+// ================= TIMINGS =================
 #define AVOID_STOP_MS        300
 #define AVOID_TURN_MS        500
 #define AVOID_TURN_BACK_MS   650  
@@ -26,7 +26,7 @@
 #define AVOID_RECHECK_MS     3500
 #define AVOID_UTURN_MS       1100  
 
-// ================= TURN SPEEDS (symmetric) =================
+// ================= TURN SPEEDS =================
 #define TURN_FAST   80
 #define TURN_BRAKE -25
 
@@ -36,23 +36,8 @@
 #define LINE_CONFIRM_READS       3
 #define TURN_LINE_IGNORE_MS      120
 
-// ================= ULTRASONIC =================
+
 #define SENSOR_SEPARATION_US 5000
-
-// ================= OBSTACLE SENSOR GATING =================
-//#define OBSTACLE_REARM_DELAY_MS 1500  // how long to wait after re-enabling before it can re-trigger
-bool          obstacleSensingEnabled = true;   // false = ultrasonic obstacle checks are ignored entirely
-unsigned long startupTime;
-
-struct UltraSensor {
-  uint8_t       trigPin;
-  uint8_t       echoPin;
-  long          dist;
-  int           state;
-  unsigned long trigTime;
-  unsigned long riseTime;
-  bool          freshSample;  // true for one loop() pass after a new reading lands
-};
 
 UltraSensor leftSensor  = {LEFT_TRIG,  LEFT_ECHO,  999, 0, 0, 0, false};
 UltraSensor rightSensor = {RIGHT_TRIG, RIGHT_ECHO, 999, 0, 0, 0, false};
@@ -64,22 +49,19 @@ long rightDist = 999;
 
 bool newSample = false;  // true only on the loop() pass where a real reading landed
 
-// ============================================================
 // ENUMS & STATE
-// ============================================================
 enum State {
   FOLLOW_LINE,
   SEARCH_LINE,
   AVOID_OBSTACLE
 };
 
-// Full bypass / U-turn sequence
 enum AvoidStep {
   AV_STOP,          // pause before maneuver
-  AV_TURN_1,        // turn 90° away from line (into open space)
-  AV_TURN_BACK,     // turn 90° back — now parallel to original path
+  AV_TURN_1,        // turn 45° away from line (into open space)
+  AV_TURN_BACK,     // turn 45° back — now parallel to original path
   AV_FORWARD_1,     // drive forward alongside obstacle until clear
-  AV_TURN_TO_LINE,  // turn 90° toward line
+  AV_TURN_TO_LINE,  // turn 45° toward line
   AV_UTURN,         // 180° turn to reverse direction (2nd+ obstacle)
   AV_FIND_LINE      // creep forward until IR sensors hit line
 };
@@ -88,8 +70,6 @@ State     state     = FOLLOW_LINE;
 AvoidStep avoidStep = AV_STOP;
 
 // ================= AVOIDANCE STEP FUNCTIONS =================
-// Each step is its own function; avoidStepFunctions[] dispatches to the
-// right one based on avoidStep, in enum order (no switch/if-else needed).
 void avStop(unsigned long elapsed);
 void avTurn1(unsigned long elapsed);
 void avTurnBack(unsigned long elapsed);
@@ -140,9 +120,7 @@ int  lineConfirmCount  = 0;
 #define OBSTACLE_CONFIRM_COUNT 4
 #define CLEAN_READS_TO_ARM     5
 
-// ============================================================
 // NON-BLOCKING INTERLEAVED ULTRASONIC
-// ============================================================
 void updateSensor(UltraSensor &s)
 {
   unsigned long nowUs = micros();
@@ -208,9 +186,7 @@ void updateUltrasonic()
   rightSensor.freshSample = false;
 }
 
-// ============================================================
 // MOTOR CONTROL
-// ============================================================
 void setMotor(int leftSpeed, int rightSpeed)
 {
   leftSpeed  = constrain(leftSpeed,  -255, 255);
@@ -244,9 +220,7 @@ void resetPID()
   integral      = 0;
 }
 
-// ============================================================
 // SETUP
-// ============================================================
 void setup()
 {
   pinMode(LEFT_IR,  INPUT);
@@ -272,9 +246,7 @@ void setup()
   obstacleSensingEnabled = true;   // sensor is live and ready before the first obstacle
 }
 
-// ============================================================
 // LOOP
-// ============================================================
 void loop()
 {
   if (millis() - startupTime > 1000)
@@ -283,7 +255,6 @@ void loop()
   }
   else
   {
-    // Ignore ultrasonic readings during startup
     leftDist = 999;
     rightDist = 999;
     newSample = false;
@@ -293,8 +264,6 @@ void loop()
   bool rightBlack = digitalRead(RIGHT_IR);
   bool obstacle = false;
 
-  // If sensing is disabled (during/just after a maneuver), pretend nothing is there —
-  // this fully blocks the ultrasonic obstacle check regardless of what the sensors see.
   bool leftObstacle =
     leftDist > 5 &&
     leftDist < OBSTACLE_DISTANCE_CM;
@@ -309,10 +278,6 @@ void loop()
     (leftObstacle || rightObstacle);
   
 
-  // --- Debounce ---
-  // Only count a confirm/reset on loop passes where a real new
-  // ultrasonic sample arrived — otherwise a single stale reading
-  // gets counted many times before the next actual ping resolves.
   if (newSample)
   {
     if (obstacle) obstacleDebounce++;
@@ -321,9 +286,6 @@ void loop()
 
   bool obstacleConfirmed = (obstacleDebounce >= OBSTACLE_CONFIRM_COUNT);
 
-  // --- Re-arming ---
-  // Count only real ultrasonic samples. Without this newSample check,
-  // five fast loop passes can re-arm the obstacle detector immediately.
   if (!obstacleArmed && state != AVOID_OBSTACLE && newSample)
   {
     if (!obstacle) cleanReadings++;
@@ -337,9 +299,7 @@ void loop()
     }
   }
 
-  // ============================================================
   // STATE: FOLLOW LINE
-  // ============================================================
   if (state == FOLLOW_LINE)
   {
     if (obstacleConfirmed && obstacleArmed && obstacleSensingEnabled)
@@ -354,10 +314,8 @@ void loop()
 
       setMotor(0, 0);
 
-      // Always dodge/turn to the left, regardless of line direction
       dodgeDirection = -1;
 
-      // 1st obstacle: side-step bypass. 2nd+ obstacle: U-turn and go the other way.
       uturnMode = (obstacleCount >= 2);
       Serial.println(uturnMode ? "Mode: U-TURN" : "Mode: SIDE-STEP");
 
@@ -370,9 +328,6 @@ void loop()
     if      (leftBlack && !rightBlack) lastDirection = -1;
     else if (!leftBlack && rightBlack) lastDirection =  1;
 
-    // ----------------------
-    // Unified PID with dynamic speed (Fixed for Full Code)
-    // ----------------------
     if (leftBlack && !rightBlack)
     {
       error          = 2.0;
@@ -393,7 +348,6 @@ void loop()
     }
     else
     {
-      // Both white — lost the line
       error          = (lastDirection == 1) ? 2.0 : -2.0; // Keeps PID variables stable
       leftBaseSpeed  = 80;
       rightBaseSpeed = 82;
@@ -414,16 +368,13 @@ void loop()
     setMotor(leftBaseSpeed - correction, rightBaseSpeed + correction);
   }
 
-  // ============================================================
   // STATE: SEARCH LINE
-  // ============================================================
   else if (state == SEARCH_LINE)
   {
     if (leftBlack || rightBlack)
     {
       resetPID();
       obstacleSensingEnabled = true;   // make sure sensing is live again once we're back on the line
-      //sensingReenableTime    = millis();
       state = FOLLOW_LINE;
       return;
     }
@@ -438,9 +389,7 @@ void loop()
     else                    setMotor(15, 55);
   }
 
-  // ============================================================
   // STATE: AVOID OBSTACLE
-  // ============================================================
   else if (state == AVOID_OBSTACLE)
   {
     unsigned long elapsed = millis() - avoidStart;
@@ -448,11 +397,8 @@ void loop()
   }
 }
 
-// ============================================================
 // AVOIDANCE STEP FUNCTIONS
-// ============================================================
 
-// --- Pause before starting the maneuver ---
 void avStop(unsigned long elapsed)
 {
   setMotor(0, 0);
@@ -473,7 +419,6 @@ void avStop(unsigned long elapsed)
   }
 }
 
-// --- Turn 90 degrees away from line (into open space) ---
 void avTurn1(unsigned long elapsed)
 {
   if (dodgeDirection == 1) setMotor(TURN_FAST, TURN_BRAKE);  // turn right
@@ -487,10 +432,8 @@ void avTurn1(unsigned long elapsed)
   }
 }
 
-// --- Drive forward past obstacle width ---
 
 
-// --- Turn 90 degrees back, now parallel to original heading ---
 void avTurnBack(unsigned long elapsed)
 {
   if (dodgeDirection == 1) setMotor(TURN_BRAKE, TURN_FAST);  // turn left
@@ -504,7 +447,6 @@ void avTurnBack(unsigned long elapsed)
   }
 }
 
-// --- Drive forward alongside obstacle until clear ---
 void avForward1(unsigned long elapsed)
 {
   setMotor(75, 85);
@@ -516,15 +458,11 @@ void avForward1(unsigned long elapsed)
   }
 }
 
-// --- Turn toward the original line and watch the IR sensors ---
-// IMPORTANT: the robot may cross the line DURING this rotation.
 void avTurnToLine(unsigned long elapsed)
 {
   bool leftBlack  = digitalRead(LEFT_IR);
   bool rightBlack = digitalRead(RIGHT_IR);
 
-  // Ignore the first instant of the turn, then require several consecutive
-  // black readings so electrical noise does not create a false detection.
   if (elapsed >= TURN_LINE_IGNORE_MS && (leftBlack || rightBlack))
   {
     lineConfirmCount++;
@@ -534,7 +472,6 @@ void avTurnToLine(unsigned long elapsed)
     lineConfirmCount = 0;
   }
 
-  // Capture the line immediately instead of rotating completely over it.
   if (lineConfirmCount >= LINE_CONFIRM_READS)
   {
     setMotor(0, 0);
@@ -554,7 +491,6 @@ void avTurnToLine(unsigned long elapsed)
     return;
   }
 
-  // Continue rotating toward the line while it has not yet been detected.
   if (dodgeDirection == 1)
   {
     setMotor(TURN_BRAKE, TURN_FAST);
@@ -564,7 +500,6 @@ void avTurnToLine(unsigned long elapsed)
     setMotor(TURN_FAST, TURN_BRAKE);
   }
 
-  // If the turn ends without seeing the line, drive forward toward it.
   if (elapsed >= AVOID_TURN_LINE_MS)
   {
     setMotor(0, 0);
@@ -576,7 +511,6 @@ void avTurnToLine(unsigned long elapsed)
   }
 }
 
-// --- 180 degree U-turn (2nd+ obstacle): reverse direction entirely ---
 void avUTurn(unsigned long elapsed)
 {
   setMotor(-25, 80);   // spin right ~180 degrees
@@ -589,21 +523,16 @@ void avUTurn(unsigned long elapsed)
   }
 }
 
-// --- Drive toward the line until either IR sensor detects black ---
 void avFindLine(unsigned long elapsed)
 {
   bool leftBlack  = digitalRead(LEFT_IR);
   bool rightBlack = digitalRead(RIGHT_IR);
 
-  // Require stable detection while driving toward the line.
   if (leftBlack || rightBlack) lineConfirmCount++;
   else                         lineConfirmCount = 0;
 
-  // The line has been reached.
   if (lineConfirmCount >= LINE_CONFIRM_READS)
   {
-    // Preserve the side on which the line was first detected so that
-    // SEARCH_LINE and PID recovery have a useful direction reference.
     if (leftBlack && !rightBlack)
     {
       lastDirection = -1;
@@ -628,16 +557,12 @@ void avFindLine(unsigned long elapsed)
     return;
   }
 
-  // If straight driving does not reach the line, begin a controlled
-  // sweep toward the side where the original line should be.
   if (elapsed >= AVOID_RECHECK_MS)
   {
     setMotor(0, 0);
 
     if (!uturnMode)
     {
-      // A left dodge means the original line is expected to the right,
-      // and a right dodge means it is expected to the left.
       lastDirection = (dodgeDirection == -1) ? 1 : -1;
     }
 
@@ -648,7 +573,5 @@ void avFindLine(unsigned long elapsed)
     return;
   }
 
-  // Positively drive toward the line. The previous 40/42 PWM could be
-  // too low to overcome motor and gearbox friction.
   setMotor(FIND_LINE_LEFT_SPEED, FIND_LINE_RIGHT_SPEED);
 }
